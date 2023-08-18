@@ -10,13 +10,115 @@ import Messages
 
 class MessagesViewController: MSMessagesAppViewController {
     
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        // Do any additional setup after loading the view.
+    private enum SectionType: String, CaseIterable {
+        case animals
+        case tree
     }
     
-    // MARK: - Conversation Handling
+    private var collectionView: UICollectionView!
+    private var datasource: UICollectionViewDiffableDataSource<SectionType, MSSticker>!
     
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        setupUI()
+        configureUI()
+        populateDatasource()
+    }
+    
+    func setupUI() {
+        collectionView = UICollectionView(frame: .zero, collectionViewLayout: createLayout())
+        collectionView.backgroundColor = .systemBackground
+        collectionView.translatesAutoresizingMaskIntoConstraints = false
+        
+        view.addSubview(collectionView)
+        NSLayoutConstraint.activate([
+            collectionView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            collectionView.topAnchor.constraint(equalTo: view.topAnchor),
+            collectionView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            collectionView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        ])
+    }
+    
+    func configureUI() {
+        let cellRegistration = UICollectionView.CellRegistration<UICollectionViewCell, MSSticker> { (cell, indexPath, item) in
+            cell.contentConfiguration = CustomContentConfiguration(sticker: item)
+        }
+        
+        let headerRegistration = UICollectionView.SupplementaryRegistration<TitleSupplementaryView>(elementKind: TitleSupplementaryView.identifier) { supplementaryView, elementKind, indexPath in
+            supplementaryView.titleLabel.text = SectionType.allCases[indexPath.section].rawValue
+        }
+        
+        datasource = UICollectionViewDiffableDataSource<SectionType, MSSticker>(
+            collectionView: collectionView, cellProvider: { (collectionView, indexPath, item) -> UICollectionViewCell? in
+                return collectionView.dequeueConfiguredReusableCell(using: cellRegistration, for: indexPath, item: item)
+            }
+        )
+        
+        datasource.supplementaryViewProvider = { (view, kind, index) in
+            self.collectionView.dequeueConfiguredReusableSupplementary(using: headerRegistration, for: index)
+        }
+    }
+    
+    private func createLayout() -> UICollectionViewLayout {
+        let sectionProvider = { (sectionIndex: Int, layoutEnvironment: NSCollectionLayoutEnvironment) -> NSCollectionLayoutSection? in
+            let headerFooterSize = NSCollectionLayoutSize(
+                widthDimension: .fractionalWidth(1.0),
+                heightDimension: .estimated(44)
+            )
+            
+            let itemSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(0.2), heightDimension: .fractionalHeight(1.0))
+            let item = NSCollectionLayoutItem(layoutSize: itemSize)
+            let groupSize = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1.0), heightDimension: .absolute(60))
+            let group = NSCollectionLayoutGroup.horizontal(layoutSize: groupSize, subitems: [item])
+            let section = NSCollectionLayoutSection(group: group)
+            
+            let sectionHeader = NSCollectionLayoutBoundarySupplementaryItem(
+                layoutSize: headerFooterSize,
+                elementKind: TitleSupplementaryView.identifier,
+                alignment: .topLeading
+            )
+            section.boundarySupplementaryItems = [sectionHeader]
+            
+            return section
+        }
+            
+        return UICollectionViewCompositionalLayout(sectionProvider: sectionProvider)
+    }
+    
+    private func populateDatasource() {
+        var snapshot = NSDiffableDataSourceSnapshot<SectionType, MSSticker>()
+        snapshot.appendSections(SectionType.allCases)
+        
+        let animals = (1...4).compactMap { index -> MSSticker? in
+            let fileName = "animal-\(index)"
+            guard let url = Bundle.main.url(forResource: fileName, withExtension: "png") else { return nil }
+            return try? MSSticker(contentsOfFileURL: url, localizedDescription: fileName)
+        }
+        snapshot.appendItems(animals, toSection: .animals)
+        
+        let trees = (1...4).compactMap { index -> MSSticker? in
+            let fileName = "tree-\(index)"
+            guard let url = Bundle.main.url(forResource: fileName, withExtension: "png") else { return nil }
+            return try? MSSticker(contentsOfFileURL: url, localizedDescription: fileName)
+        }
+        snapshot.appendItems(trees, toSection: .tree)
+        
+        datasource.apply(snapshot, animatingDifferences: true, completion: nil)
+    }
+}
+
+//MARK: UICollectionViewDelegate
+extension MessagesViewController: UICollectionViewDelegate {
+    func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+        if let conversation = activeConversation, let sticker = datasource.itemIdentifier(for: indexPath) {
+            conversation.insert(sticker, completionHandler: nil)
+        }
+    }
+}
+
+
+// MARK: - Conversation Handling
+extension MessagesViewController {
     override func willBecomeActive(with conversation: MSConversation) {
         // Called when the extension is about to move from the inactive to active state.
         // This will happen when the extension is about to present UI.
